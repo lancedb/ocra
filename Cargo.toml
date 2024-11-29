@@ -1,0 +1,16 @@
+[package]
+name = "ocra"
+version = "0.1.0"
+authors = ["dev@lancedb.com"]
+description = "OCRA: A Rust implementation of Cache in arrow-rs' ObjectStore interface"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+bytes = "~1.9"
+futures = "0.3"
+log = "~0.4"
+moka = { version = "~0.12", features = ["future"] }
+object_store = "~0.11"
+sha2 = "~0.10"
+num_cpus = "1.16"
