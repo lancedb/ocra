@@ -12,7 +12,7 @@
 //! let fs = Arc::new(LocalFileSystem::new());
 //! // Use 75% of system memory for cache
 //! let memory_cache = Arc::new(
-//!     InMemoryCache::with_sys_memory(0.75, 4 * 1024 * 1024));
+//!     InMemoryCache::with_sys_memory(0.75).build());
 //! let cached: Arc<dyn ObjectStore> =
 //!     Arc::new(ReadThroughCache::new(fs, memory_cache));
 //!
@@ -23,7 +23,7 @@
 //! ```
 
 pub mod memory;
-mod paging;
+pub mod paging;
 mod read_through;
 
 // We reuse `object_store` Error and Result to make this crate work well

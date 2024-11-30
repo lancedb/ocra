@@ -16,10 +16,10 @@ use crate::Result;
 #[async_trait]
 pub trait PageCache: Sync + Send + Debug {
     /// The size of each page.
-    fn page_size(&self) -> usize;
+    fn page_size(&self) -> u64;
 
     /// Cache capacity, in number of pages.
-    fn capacity(&self) -> usize;
+    fn capacity(&self) -> u64;
 
     /// How many pages are cached.
     fn len(&self) -> usize;
