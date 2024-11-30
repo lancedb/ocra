@@ -47,7 +47,7 @@ pub struct InMemoryCache {
 impl InMemoryCache {
     /// Create a [`Builder`](InMemoryCacheBuilder) to construct [InMemoryCache].
     ///
-    /// Parameters:
+    /// # Parameters:
     /// - *capacity*: capacity in bytes
     ///
     /// ```
@@ -63,9 +63,9 @@ impl InMemoryCache {
         InMemoryCacheBuilder::new(capacity_bytes)
     }
 
-    /// Create a new [InMemoryCache] with a fixed capacity and page size.
+    /// Explicitly create a new [InMemoryCache] with a fixed capacity and page size.
     ///
-    /// Parameters:
+    /// # Parameters:
     /// - `capacity_bytes`: Max capacity in bytes.
     /// - `page_size`: The maximum size of each page.
     ///
@@ -110,7 +110,7 @@ impl PageCache for InMemoryCache {
         self.page_size
     }
 
-    /// Cache capacity, in number of pages.
+    /// Cache capacity in bytes.
     fn capacity(&self) -> u64 {
         self.capacity
     }
