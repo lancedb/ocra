@@ -27,7 +27,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
       - name: Check clippy
-        run: cargo clippy --locked --tests --benches -- -D warnings
+        run: cargo clippy --tests --benches -- -D warnings
   test:
     strategy:
       matrix:
