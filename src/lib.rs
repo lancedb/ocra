@@ -1,5 +1,11 @@
-//! **OCRA**: an *arrow-rs* [**O**bjectStore](object_store::ObjectStore)
-//! implementation with **C**ache in **R**ust for **A**ll
+//! **OCRA**: (**A**) (**R**)ust (**C**)ache implementation for *arrow-rs*
+//! [(**O**)bjectStore](object_store::ObjectStore).
+//!
+//! It offers a few `ObjectStore` implementations that work with
+//! caches.
+//!
+//! For example, you can use [`ReadThroughCache`] to wrap an existing
+//! `ObjectStore` instance with a [`PageCache`](paging::PageCache).
 //!
 //! ```no_run
 //! # use std::sync::Arc;
@@ -13,12 +19,12 @@
 //! // Use 75% of system memory for cache
 //! let memory_cache = Arc::new(
 //!     InMemoryCache::with_sys_memory(0.75).build());
-//! let cached: Arc<dyn ObjectStore> =
+//! let cached_store: Arc<dyn ObjectStore> =
 //!     Arc::new(ReadThroughCache::new(fs, memory_cache));
 //!
-//! // Now you can use `cached` as a regular ObjectStore
+//! // Now you can use `cached_store` as a regular ObjectStore
 //! let path = Path::from("my-key");
-//! let data = cached.get_range(&path, 1024..2048).await.unwrap();
+//! let data = cached_store.get_range(&path, 1024..2048).await.unwrap();
 //! # })
 //! ```
 
