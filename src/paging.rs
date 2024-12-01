@@ -74,15 +74,6 @@ pub trait PageCache: Sync + Send + Debug {
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes>;
 
-    /// Put a page in the cache.
-    ///
-    /// # Parameters
-    /// - `id`: The ID of the page.
-    /// - `page`: The data to put in the page. The page must not be larger than the page size.
-    ///           If the page is smaller than the page size, the remaining space will be zeroed.
-    ///
-    async fn put(&self, id: [u8; 32], page: Bytes) -> Result<()>;
-
     /// Remove a page from the cache.
-    async fn remove(&self, key: [u8; 32]) -> Result<()>;
+    async fn invalidate(&self, location: &Path, page_id: u64) -> Result<()>;
 }

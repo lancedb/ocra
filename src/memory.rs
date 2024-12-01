@@ -121,7 +121,7 @@ impl PageCache for InMemoryCache {
 
     /// How many pages are cached.
     fn len(&self) -> usize {
-        todo!()
+        self.cache.entry_count() as usize
     }
 
     async fn get_with(
@@ -158,18 +158,14 @@ impl PageCache for InMemoryCache {
         Ok(bytes.slice(range))
     }
 
-    /// Put a page in the cache.
-    ///
-    /// # Parameters
-    /// - `id`: The ID of the page.
-    /// - `page`: The data to put in the page. The page must not be larger than the page size.
-    ///           If the page is smaller than the page size, the remaining space will be zeroed.
-    ///
-    async fn put(&self, id: [u8; 32], page: Bytes) -> Result<()> {
-        todo!()
+    async fn invalidate(&self, location: &Path, page_id: u64) -> Result<()> {
+        let key = to_page_key(location, page_id);
+        self.cache.remove(&key).await;
+        Ok(())
     }
+}
 
-    async fn remove(&self, id: [u8; 32]) -> Result<()> {
-        todo!()
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 }
