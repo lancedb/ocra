@@ -7,14 +7,14 @@ use super::{InMemoryCache, DEFAULT_PAGE_SIZE, DEFAULT_TIME_TO_LIVE};
 
 /// Builder for [InMemoryCache]
 pub struct InMemoryCacheBuilder {
-    capacity: u64,
-    page_size: u64,
+    capacity: usize,
+    page_size: usize,
 
     time_to_idle: Duration,
 }
 
 impl InMemoryCacheBuilder {
-    pub(crate) fn new(capacity: u64) -> Self {
+    pub(crate) fn new(capacity: usize) -> Self {
         Self {
             capacity,
             page_size: DEFAULT_PAGE_SIZE,
@@ -23,7 +23,7 @@ impl InMemoryCacheBuilder {
     }
 
     /// Set the page size.
-    pub fn page_size(&mut self, size: u64) -> &mut Self {
+    pub fn page_size(&mut self, size: usize) -> &mut Self {
         self.page_size = size;
         self
     }

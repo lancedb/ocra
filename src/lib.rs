@@ -22,6 +22,7 @@
 //! # })
 //! ```
 
+// pub mod error;
 pub mod memory;
 pub mod paging;
 mod read_through;

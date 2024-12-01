@@ -3,12 +3,24 @@
 //! A Page cache caches data in fixed-size pages.
 
 use std::fmt::Debug;
+use std::future::Future;
 use std::ops::Range;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use object_store::path::Path;
+use sha2::{Digest, Sha256};
 
 use crate::Result;
+
+pub(crate) type PageKey = [u8; 32];
+
+pub(crate) fn to_page_key(location: &Path, offset: u64) -> PageKey {
+    let mut hasher = Sha256::new();
+    hasher.update(location.as_ref());
+    hasher.update(&offset.to_be_bytes());
+    hasher.finalize().into()
+}
 
 /// [PageCache] trait.
 ///
@@ -16,10 +28,10 @@ use crate::Result;
 #[async_trait]
 pub trait PageCache: Sync + Send + Debug {
     /// The size of each page.
-    fn page_size(&self) -> u64;
+    fn page_size(&self) -> usize;
 
     /// Cache capacity, in number of pages.
-    fn capacity(&self) -> u64;
+    fn capacity(&self) -> usize;
 
     /// How many pages are cached.
     fn len(&self) -> usize;
@@ -29,13 +41,22 @@ pub trait PageCache: Sync + Send + Debug {
         self.len() == 0
     }
 
-    /// Read data from a Page.
+    /// Read data of a page.
+    ///
+    /// # Parameters
+    /// - `location`: the path of the object.
+    /// - `page_id`: the ID of the page.
     ///
     /// # Returns
     /// - `Ok(Some(Bytes))` if the page exists and the data was read successfully.
     /// - `Ok(None)` if the page does not exist.
     /// - `Err(Error)` if an error occurred.
-    async fn get(&self, id: [u8; 32]) -> Result<Option<Bytes>>;
+    async fn get_with(
+        &self,
+        location: &Path,
+        page_id: u64,
+        loader: impl Future<Output = Result<Bytes>> + Send,
+    ) -> Result<Bytes>;
 
     /// Get range of data in the page.
     ///
@@ -44,8 +65,14 @@ pub trait PageCache: Sync + Send + Debug {
     /// - `range`: The range of data to read from the page. The range must be within the page size.
     ///
     /// # Returns
-    /// See [Self::get()].
-    async fn get_range(&self, id: [u8; 32], range: Range<usize>) -> Result<Option<Bytes>>;
+    /// See [Self::get_with()].
+    async fn get_range_with(
+        &self,
+        location: &Path,
+        page_id: u64,
+        range: Range<usize>,
+        loader: impl Future<Output = Result<Bytes>> + Send,
+    ) -> Result<Bytes>;
 
     /// Put a page in the cache.
     ///
@@ -55,4 +82,7 @@ pub trait PageCache: Sync + Send + Debug {
     ///           If the page is smaller than the page size, the remaining space will be zeroed.
     ///
     async fn put(&self, id: [u8; 32], page: Bytes) -> Result<()>;
+
+    /// Remove a page from the cache.
+    async fn remove(&self, key: [u8; 32]) -> Result<()>;
 }

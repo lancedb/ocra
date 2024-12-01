@@ -13,19 +13,23 @@
 //! let cache = InMemoryCache::builder(32 * 1024 * 1024 * 1024).build();
 //! ```
 
-use std::{ops::Range, time::Duration};
+use std::{future::Future, ops::Range, time::Duration};
 
 use bytes::Bytes;
 use moka::future::Cache;
+use object_store::path::Path;
 use sysinfo::{MemoryRefreshKind, RefreshKind};
 
 mod builder;
 
 pub use self::builder::InMemoryCacheBuilder;
-use crate::{paging::PageCache, Result};
+use crate::{
+    paging::{to_page_key, PageCache, PageKey},
+    Error, Result,
+};
 
 /// Default memory page size is 8 MB
-pub const DEFAULT_PAGE_SIZE: u64 = 8 * 1024 * 1024;
+pub const DEFAULT_PAGE_SIZE: usize = 8 * 1024 * 1024;
 const DEFAULT_TIME_TO_LIVE: Duration = Duration::from_secs(60 * 30); // 30 minutes
 
 /// In-memory [PageCache] implementation.
@@ -35,13 +39,13 @@ const DEFAULT_TIME_TO_LIVE: Duration = Duration::from_secs(60 * 30); // 30 minut
 #[derive(Debug)]
 pub struct InMemoryCache {
     /// Capacity in bytes
-    capacity: u64,
+    capacity: usize,
 
     /// Size of each page
-    page_size: u64,
+    page_size: usize,
 
     /// Page cache: a mapping from `(path id, offset)` to data / bytes.
-    cache: Cache<(u32, u32), Bytes>,
+    cache: Cache<PageKey, Bytes>,
 }
 
 impl InMemoryCache {
@@ -59,7 +63,7 @@ impl InMemoryCache {
     ///     .time_to_idle(Duration::from_secs(60))
     ///     .build();
     /// ```
-    pub fn builder(capacity_bytes: u64) -> InMemoryCacheBuilder {
+    pub fn builder(capacity_bytes: usize) -> InMemoryCacheBuilder {
         InMemoryCacheBuilder::new(capacity_bytes)
     }
 
@@ -69,7 +73,7 @@ impl InMemoryCache {
     /// - `capacity_bytes`: Max capacity in bytes.
     /// - `page_size`: The maximum size of each page.
     ///
-    pub fn new(capacity_bytes: u64, page_size: u64) -> Self {
+    pub fn new(capacity_bytes: usize, page_size: usize) -> Self {
         Self::with_params(capacity_bytes, page_size, DEFAULT_TIME_TO_LIVE)
     }
 
@@ -83,13 +87,13 @@ impl InMemoryCache {
         let sys = sysinfo::System::new_with_specifics(
             RefreshKind::new().with_memory(MemoryRefreshKind::everything()),
         );
-        let capacity = (sys.total_memory() as f32 * fraction) as u64;
+        let capacity = (sys.total_memory() as f32 * fraction) as usize;
         Self::builder(capacity)
     }
 
-    fn with_params(capacity_bytes: u64, page_size: u64, time_to_idle: Duration) -> Self {
+    fn with_params(capacity_bytes: usize, page_size: usize, time_to_idle: Duration) -> Self {
         let cache = Cache::builder()
-            .max_capacity(capacity_bytes)
+            .max_capacity(capacity_bytes as u64)
             // weight each key using the size of the value
             .weigher(|_key, value: &Bytes| -> u32 { value.len() as u32 })
             .time_to_idle(time_to_idle)
@@ -106,12 +110,12 @@ impl InMemoryCache {
 #[async_trait::async_trait]
 impl PageCache for InMemoryCache {
     /// The size of each page.
-    fn page_size(&self) -> u64 {
+    fn page_size(&self) -> usize {
         self.page_size
     }
 
     /// Cache capacity in bytes.
-    fn capacity(&self) -> u64 {
+    fn capacity(&self) -> usize {
         self.capacity
     }
 
@@ -120,20 +124,38 @@ impl PageCache for InMemoryCache {
         todo!()
     }
 
-    async fn get(&self, id: [u8; 32]) -> Result<Option<Bytes>> {
-        todo!()
+    async fn get_with(
+        &self,
+        location: &Path,
+        page_id: u64,
+        loader: impl Future<Output = Result<Bytes>> + Send,
+    ) -> Result<Bytes> {
+        let key = to_page_key(location, page_id);
+        match self.cache.try_get_with(key, loader).await {
+            Ok(bytes) => Ok(bytes),
+            Err(e) => match e.as_ref() {
+                Error::NotFound { .. } => Err(Error::NotFound {
+                    path: location.to_string(),
+                    source: Box::new(e),
+                }),
+                _ => Err(Error::Generic {
+                    store: "InMemoryCache",
+                    source: Box::new(e),
+                }),
+            },
+        }
     }
 
-    /// Get range of data in the page.
-    ///
-    /// # Parameters
-    /// - `id`: The ID of the page.
-    /// - `range`: The range of data to read from the page. The range must be within the page size.
-    ///
-    /// # Returns
-    /// See [Self::get()].
-    async fn get_range(&self, id: [u8; 32], range: Range<usize>) -> Result<Option<Bytes>> {
-        todo!()
+    async fn get_range_with(
+        &self,
+        location: &Path,
+        page_id: u64,
+        range: Range<usize>,
+        loader: impl Future<Output = Result<Bytes>> + Send,
+    ) -> Result<Bytes> {
+        assert!(range.start <= range.end && range.end <= self.page_size());
+        let bytes = self.get_with(location, page_id, loader).await?;
+        Ok(bytes.slice(range))
     }
 
     /// Put a page in the cache.
@@ -144,6 +166,10 @@ impl PageCache for InMemoryCache {
     ///           If the page is smaller than the page size, the remaining space will be zeroed.
     ///
     async fn put(&self, id: [u8; 32], page: Bytes) -> Result<()> {
+        todo!()
+    }
+
+    async fn remove(&self, id: [u8; 32]) -> Result<()> {
         todo!()
     }
 }

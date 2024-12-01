@@ -12,12 +12,12 @@ use crate::{paging::PageCache, Result};
 /// Read-through Page Cache.
 ///
 #[derive(Debug)]
-pub struct ReadThroughCache {
+pub struct ReadThroughCache<C: PageCache> {
     inner: Arc<dyn ObjectStore>,
-    cache: Arc<dyn PageCache>,
+    cache: Arc<C>,
 }
 
-impl std::fmt::Display for ReadThroughCache {
+impl<C: PageCache> std::fmt::Display for ReadThroughCache<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -27,14 +27,14 @@ impl std::fmt::Display for ReadThroughCache {
     }
 }
 
-impl ReadThroughCache {
-    pub fn new(inner: Arc<dyn ObjectStore>, cache: Arc<dyn PageCache>) -> Self {
+impl<C: PageCache> ReadThroughCache<C> {
+    pub fn new(inner: Arc<dyn ObjectStore>, cache: Arc<C>) -> Self {
         Self { inner, cache }
     }
 }
 
 #[async_trait]
-impl ObjectStore for ReadThroughCache {
+impl<C: PageCache + 'static> ObjectStore for ReadThroughCache<C> {
     async fn put_opts(
         &self,
         _location: &Path,
