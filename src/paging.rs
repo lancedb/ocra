@@ -15,6 +15,7 @@ use crate::Result;
 
 pub(crate) type PageKey = [u8; 32];
 
+/// Convert a location and offset to a page key.
 pub(crate) fn to_page_key(location: &Path, offset: u64) -> PageKey {
     let mut hasher = Sha256::new();
     hasher.update(location.as_ref());
@@ -32,14 +33,6 @@ pub trait PageCache: Sync + Send + Debug {
 
     /// Cache capacity, in number of pages.
     fn capacity(&self) -> usize;
-
-    /// How many pages are cached.
-    fn len(&self) -> usize;
-
-    /// Returns true if the cache is empty.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 
     /// Read data of a page.
     ///

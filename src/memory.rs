@@ -44,7 +44,7 @@ pub struct InMemoryCache {
     /// Size of each page
     page_size: usize,
 
-    /// Page cache: a mapping from `(path id, offset)` to data / bytes.
+    /// In memory page cache: a mapping from `(path id, offset)` to data / bytes.
     cache: Cache<PageKey, Bytes>,
 }
 
@@ -119,11 +119,6 @@ impl PageCache for InMemoryCache {
         self.capacity
     }
 
-    /// How many pages are cached.
-    fn len(&self) -> usize {
-        self.cache.entry_count() as usize
-    }
-
     async fn get_with(
         &self,
         location: &Path,
@@ -169,11 +164,15 @@ impl PageCache for InMemoryCache {
 mod tests {
     use super::*;
 
-    use std::sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
+    use std::{
+        io::Write,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
     };
 
+    use bytes::{BufMut, BytesMut};
     use object_store::{local::LocalFileSystem, ObjectStore};
     use tempfile::tempdir;
 
@@ -217,5 +216,58 @@ mod tests {
             .unwrap();
         assert_eq!(miss.load(Ordering::SeqCst), 1);
         assert_eq!(data, Bytes::from("test data"));
+    }
+
+    #[tokio::test]
+    async fn test_eviction() {
+        const PAGE_SIZE: usize = 512;
+        let cache = InMemoryCache::new(1024, PAGE_SIZE);
+        let local_fs = Arc::new(LocalFileSystem::new());
+
+        let tmp_dir = tempdir().unwrap();
+        let file_path = tmp_dir.path().join("test.bin");
+        {
+            let mut file = std::fs::File::create(&file_path).unwrap();
+            for i in 0_u64..1024 {
+                file.write_all(&i.to_be_bytes()).unwrap();
+            }
+        }
+        let location = Path::from(file_path.as_path().to_str().unwrap());
+        cache.cache.run_pending_tasks().await;
+
+        let miss = Arc::new(AtomicUsize::new(0));
+
+        for (page_id, expected_miss, expected_size) in
+            [(0, 1, 1), (0, 1, 1), (1, 2, 2), (4, 3, 2), (5, 4, 2)].iter()
+        {
+            let data = cache
+                .get_with(&location, *page_id, {
+                    let miss = miss.clone();
+                    let local_fs = local_fs.clone();
+                    let location = location.clone();
+                    async move {
+                        miss.fetch_add(1, Ordering::SeqCst);
+                        local_fs
+                            .get_range(
+                                &location,
+                                PAGE_SIZE * (*page_id as usize)..PAGE_SIZE * (page_id + 1) as usize,
+                            )
+                            .await
+                    }
+                })
+                .await
+                .unwrap();
+            assert_eq!(miss.load(Ordering::SeqCst), *expected_miss);
+            assert_eq!(data.len(), PAGE_SIZE);
+
+            cache.cache.run_pending_tasks().await;
+            assert_eq!(cache.cache.entry_count(), *expected_size);
+
+            let mut buf = BytesMut::with_capacity(PAGE_SIZE);
+            for i in page_id * PAGE_SIZE as u64 / 8..(page_id + 1) * PAGE_SIZE as u64 / 8 {
+                buf.put_u64(i);
+            }
+            assert_eq!(data, buf);
+        }
     }
 }
