@@ -18,7 +18,7 @@ pub(crate) type PageKey = [u8; 32];
 pub(crate) fn to_page_key(location: &Path, offset: u64) -> PageKey {
     let mut hasher = Sha256::new();
     hasher.update(location.as_ref());
-    hasher.update(&offset.to_be_bytes());
+    hasher.update(offset.to_be_bytes());
     hasher.finalize().into()
 }
 

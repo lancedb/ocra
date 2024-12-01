@@ -91,17 +91,17 @@ impl InMemoryCache {
         Self::builder(capacity)
     }
 
-    fn with_params(capacity_bytes: usize, page_size: usize, time_to_idle: Duration) -> Self {
+    fn with_params(capacity: usize, page_size: usize, time_to_idle: Duration) -> Self {
         let cache = Cache::builder()
-            .max_capacity(capacity_bytes as u64)
+            .max_capacity(capacity as u64)
             // weight each key using the size of the value
             .weigher(|_key, value: &Bytes| -> u32 { value.len() as u32 })
             .time_to_idle(time_to_idle)
             // .eviction_listener(eviction_listener)
             .build();
         Self {
-            capacity: capacity_bytes,
-            page_size: page_size,
+            capacity,
+            page_size,
             cache,
         }
     }
@@ -168,4 +168,54 @@ impl PageCache for InMemoryCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    use object_store::{local::LocalFileSystem, ObjectStore};
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_get_range() {
+        let cache = InMemoryCache::new(1024, 512);
+        let local_fs = Arc::new(LocalFileSystem::new());
+
+        let tmp_dir = tempdir().unwrap();
+        let file_path = tmp_dir.path().join("test.bin");
+        std::fs::write(&file_path, "test data").unwrap();
+        let location = Path::from(file_path.as_path().to_str().unwrap());
+
+        let miss = Arc::new(AtomicUsize::new(0));
+
+        let data = cache
+            .get_with(&location, 0, {
+                let miss = miss.clone();
+                let local_fs = local_fs.clone();
+                let location = location.clone();
+                async move {
+                    miss.fetch_add(1, Ordering::SeqCst);
+                    local_fs.get(&location).await.unwrap().bytes().await
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(miss.load(Ordering::SeqCst), 1);
+        assert_eq!(data, Bytes::from("test data"));
+
+        let data = cache
+            .get_with(&location, 0, {
+                let miss = miss.clone();
+                let location = location.clone();
+                async move {
+                    miss.fetch_add(1, Ordering::SeqCst);
+                    local_fs.get(&location).await.unwrap().bytes().await
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(miss.load(Ordering::SeqCst), 1);
+        assert_eq!(data, Bytes::from("test data"));
+    }
 }

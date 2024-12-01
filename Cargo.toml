@@ -5,6 +5,8 @@ authors = ["dev@lancedb.com"]
 description = "OCRA: A Rust implementation of Cache in arrow-rs' ObjectStore interface"
 edition = "2021"
 license-file = "LICENSE"
+keywords = ["cache", "object-store", "arrow"]
+categories = ["caching"]
 
 [dependencies]
 async-trait = "0.1"
@@ -19,3 +21,4 @@ sysinfo = "0.32"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+tempfile = "3.2"
