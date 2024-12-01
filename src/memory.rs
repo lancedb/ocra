@@ -1,4 +1,4 @@
-//! In-memory [PageCache] implementation
+//! In-memory [`PageCache`] implementation
 //!
 //! User can specify the capacity of the cache, or specify
 //! how much percentage of memory should be allocated to it.
@@ -32,7 +32,7 @@ use crate::{
 pub const DEFAULT_PAGE_SIZE: usize = 8 * 1024 * 1024;
 const DEFAULT_TIME_TO_LIVE: Duration = Duration::from_secs(60 * 30); // 30 minutes
 
-/// In-memory [PageCache] implementation.
+/// In-memory [`PageCache`] implementation.
 ///
 /// This is a LRU mapping of page IDs to page data, with TTL eviction.
 ///
@@ -49,7 +49,7 @@ pub struct InMemoryCache {
 }
 
 impl InMemoryCache {
-    /// Create a [`Builder`](InMemoryCacheBuilder) to construct [InMemoryCache].
+    /// Create a [`Builder`](InMemoryCacheBuilder) to construct [`InMemoryCache`].
     ///
     /// # Parameters:
     /// - *capacity*: capacity in bytes
@@ -63,6 +63,7 @@ impl InMemoryCache {
     ///     .time_to_idle(Duration::from_secs(60))
     ///     .build();
     /// ```
+    #[must_use]
     pub fn builder(capacity_bytes: usize) -> InMemoryCacheBuilder {
         InMemoryCacheBuilder::new(capacity_bytes)
     }

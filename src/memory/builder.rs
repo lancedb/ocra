@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use super::{InMemoryCache, DEFAULT_PAGE_SIZE, DEFAULT_TIME_TO_LIVE};
 
-/// Builder for [InMemoryCache]
+/// Builder for [`InMemoryCache`]
 pub struct InMemoryCacheBuilder {
     capacity: usize,
     page_size: usize,
@@ -37,6 +37,7 @@ impl InMemoryCacheBuilder {
         self
     }
 
+    #[must_use]
     pub fn build(&self) -> InMemoryCache {
         InMemoryCache::with_params(self.capacity, self.page_size, self.time_to_idle)
     }
