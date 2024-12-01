@@ -33,7 +33,7 @@ jobs:
       matrix:
         machine:
           - ubuntu-24.04
-          - ubuntu-2404-4x-arm64
+          # - ubuntu-2404-4x-arm64
           - macos-14
     runs-on: ${{ matrix.machine }}
     steps:
