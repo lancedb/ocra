@@ -383,7 +383,6 @@ mod tests {
                 async move { local_fs.head(&path).await }
             })
             .await;
-        println!("{:?}", r);
         assert!(matches!(r, Err(Error::NotFound { .. })));
         cache.metadata_cache.run_pending_tasks().await;
         assert_eq!(cache.metadata_cache.entry_count(), 0);
