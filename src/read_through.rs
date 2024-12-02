@@ -210,7 +210,6 @@ mod tests {
 
         let data = cache.get_range(&path, 10..meta.size).await.unwrap();
         assert_eq!(data.len(), 9);
-        println!("Data: {:?}", data);
         assert_eq!(data, "long text".as_bytes());
     }
 }
