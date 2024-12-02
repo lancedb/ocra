@@ -16,7 +16,31 @@ use crate::{traits::CachedObjectStore, Result};
 
 pub trait PathFilter: Send + Sync + Debug {
     /// Returns true if the path should skip the cache and read the object store directly
-    fn pass_through(&self, path: &Path) -> bool;
+    fn skip_cache(&self, path: &Path) -> bool;
+}
+
+/// Filter based on file extensions.
+#[derive(Debug)]
+pub struct ExtensionFilter {
+    extensions: Vec<String>,
+}
+
+impl ExtensionFilter {
+    pub fn new<S: AsRef<str>>(extensions: &[S]) -> Self {
+        Self {
+            extensions: extensions.iter().map(|s| s.as_ref().to_string()).collect(),
+        }
+    }
+}
+
+impl PathFilter for ExtensionFilter {
+    fn skip_cache(&self, path: &Path) -> bool {
+        if let Some(ext) = path.extension() {
+            self.extensions.iter().any(|e| e == ext)
+        } else {
+            false
+        }
+    }
 }
 
 /// Path filter
@@ -37,8 +61,9 @@ impl FilteringStore {
         }
     }
 
-    fn should_pass_through(&self, path: &Path) -> bool {
-        self.filters.iter().any(|f| f.pass_through(path))
+    /// Returns true if the path should skip the cache and read the object store directly.
+    fn should_skip_cache(&self, path: &Path) -> bool {
+        self.filters.iter().any(|f| f.skip_cache(path))
     }
 }
 
@@ -60,7 +85,7 @@ impl ObjectStore for FilteringStore {
         payload: PutPayload,
         opts: PutOptions,
     ) -> Result<PutResult> {
-        if self.should_pass_through(location) {
+        if self.should_skip_cache(location) {
             self.inner.inner().put_opts(location, payload, opts).await
         } else {
             self.inner.put_opts(location, payload, opts).await
@@ -72,7 +97,7 @@ impl ObjectStore for FilteringStore {
         location: &Path,
         opts: PutMultipartOpts,
     ) -> Result<Box<dyn MultipartUpload>> {
-        if self.should_pass_through(location) {
+        if self.should_skip_cache(location) {
             self.inner.inner().put_multipart_opts(location, opts).await
         } else {
             self.inner.put_multipart_opts(location, opts).await
@@ -80,7 +105,7 @@ impl ObjectStore for FilteringStore {
     }
 
     async fn get_opts(&self, location: &Path, options: GetOptions) -> Result<GetResult> {
-        if self.should_pass_through(location) {
+        if self.should_skip_cache(location) {
             self.inner.inner().get_opts(location, options).await
         } else {
             self.inner.get_opts(location, options).await
@@ -88,7 +113,7 @@ impl ObjectStore for FilteringStore {
     }
 
     async fn head(&self, location: &Path) -> Result<ObjectMeta> {
-        if self.should_pass_through(location) {
+        if self.should_skip_cache(location) {
             self.inner.inner().head(location).await
         } else {
             self.inner.head(location).await
@@ -96,7 +121,7 @@ impl ObjectStore for FilteringStore {
     }
 
     async fn delete(&self, location: &Path) -> Result<()> {
-        if self.should_pass_through(location) {
+        if self.should_skip_cache(location) {
             self.inner.inner().delete(location).await
         } else {
             self.inner.delete(location).await
@@ -112,7 +137,7 @@ impl ObjectStore for FilteringStore {
     }
 
     async fn copy_if_not_exists(&self, from: &Path, to: &Path) -> Result<()> {
-        if self.should_pass_through(from) {
+        if self.should_skip_cache(from) {
             self.inner.inner().copy_if_not_exists(from, to).await
         } else {
             self.inner.copy_if_not_exists(from, to).await
@@ -120,7 +145,7 @@ impl ObjectStore for FilteringStore {
     }
 
     async fn copy(&self, from: &Path, to: &Path) -> Result<()> {
-        if self.should_pass_through(from) {
+        if self.should_skip_cache(from) {
             self.inner.inner().copy(from, to).await
         } else {
             self.inner.copy(from, to).await
