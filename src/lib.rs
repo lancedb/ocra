@@ -29,9 +29,11 @@
 //! ```
 
 // pub mod error;
+pub mod filtered;
 pub mod memory;
 pub mod paging;
 mod read_through;
+mod traits;
 
 // We reuse `object_store` Error and Result to make this crate work well
 // with the rest of object_store implementations.

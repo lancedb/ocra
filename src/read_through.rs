@@ -9,7 +9,7 @@ use object_store::{
     ObjectMeta, ObjectStore, PutMultipartOpts, PutOptions, PutPayload, PutResult,
 };
 
-use crate::{paging::PageCache, Result};
+use crate::{paging::PageCache, traits::CachedObjectStore, Result};
 
 /// Read-through Page Cache.
 ///
@@ -89,6 +89,12 @@ async fn get_range<C: PageCache>(
     Ok(buf.into())
 }
 
+impl<C: PageCache> CachedObjectStore for ReadThroughCache<C> {
+    fn inner(&self) -> &Arc<dyn ObjectStore> {
+        &self.inner
+    }
+}
+
 #[async_trait]
 impl<C: PageCache> ObjectStore for ReadThroughCache<C> {
     async fn put_opts(
@@ -105,11 +111,11 @@ impl<C: PageCache> ObjectStore for ReadThroughCache<C> {
     async fn put_multipart_opts(
         &self,
         location: &Path,
-        _opts: PutMultipartOpts,
+        opts: PutMultipartOpts,
     ) -> Result<Box<dyn MultipartUpload>> {
         self.invalidate(location).await?;
 
-        self.inner.put_multipart_opts(location, _opts).await
+        self.inner.put_multipart_opts(location, opts).await
     }
 
     async fn get_opts(&self, _location: &Path, _options: GetOptions) -> Result<GetResult> {
