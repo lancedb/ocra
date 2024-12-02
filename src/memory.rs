@@ -23,7 +23,7 @@ use std::{
 
 use bytes::Bytes;
 use moka::future::Cache;
-use object_store::path::Path;
+use object_store::{path::Path, ObjectMeta};
 use sysinfo::{MemoryRefreshKind, RefreshKind};
 use tokio::sync::RwLock;
 
@@ -35,6 +35,7 @@ use crate::{paging::PageCache, Error, Result};
 /// Default memory page size is 16 KB
 pub const DEFAULT_PAGE_SIZE: usize = 16 * 1024;
 const DEFAULT_TIME_TO_IDLE: Duration = Duration::from_secs(60 * 30); // 30 minutes
+const DEFAULT_METADATA_CACHE_SIZE: usize = 32 * 1024 * 1024;
 
 /// In-memory [`PageCache`] implementation.
 ///
@@ -50,6 +51,9 @@ pub struct InMemoryCache {
 
     /// In memory page cache: a mapping from `(path id, offset)` to data / bytes.
     cache: Cache<(u64, u32), Bytes>,
+
+    /// Metadata cache
+    metadata_cache: Cache<u64, ObjectMeta>,
 
     /// Provide fast lookup of path id
     location_lookup: RwLock<HashMap<Path, u64>>,
@@ -110,10 +114,15 @@ impl InMemoryCache {
             .time_to_idle(time_to_idle)
             // .eviction_listener(eviction_listener)
             .build();
+        let metadata_cache = Cache::builder()
+            .max_capacity(DEFAULT_METADATA_CACHE_SIZE as u64)
+            .time_to_idle(time_to_idle)
+            .build();
         Self {
             capacity,
             page_size,
             cache,
+            metadata_cache,
             location_lookup: RwLock::new(HashMap::new()),
             next_location_id: AtomicU64::new(0),
         }
@@ -191,9 +200,57 @@ impl PageCache for InMemoryCache {
         Ok(bytes.slice(range))
     }
 
-    async fn invalidate(&self, location: &Path, page_id: u32) -> Result<()> {
+    async fn get(&self, location: &Path, page_id: u32) -> Result<Option<Bytes>> {
         let location_id = self.location_id(location).await;
-        self.cache.remove(&(location_id, page_id)).await;
+        Ok(self.cache.get(&(location_id, page_id)).await)
+    }
+
+    async fn get_range(
+        &self,
+        location: &Path,
+        page_id: u32,
+        range: Range<usize>,
+    ) -> Result<Option<Bytes>> {
+        Ok(self
+            .get(location, page_id)
+            .await?
+            .map(|bytes| bytes.slice(range)))
+    }
+
+    async fn put(&self, location: &Path, page_id: u32, data: Bytes) -> Result<()> {
+        let location_id = self.location_id(location).await;
+        self.cache.insert((location_id, page_id), data).await;
+        Ok(())
+    }
+
+    async fn head(
+        &self,
+        location: &Path,
+        loader: impl Future<Output = Result<ObjectMeta>> + Send,
+    ) -> Result<ObjectMeta> {
+        let location_id = self.location_id(location).await;
+        match self.metadata_cache.try_get_with(location_id, loader).await {
+            Ok(meta) => Ok(meta),
+            Err(e) => match e.as_ref() {
+                // TODO: this adds an extra layer of error wrapping
+                Error::NotFound { path, .. } => Err(Error::NotFound {
+                    path: path.to_string(),
+                    source: e.into(),
+                }),
+                _ => Err(Error::Generic {
+                    store: "InMemoryCache",
+                    source: Box::new(e),
+                }),
+            },
+        }
+    }
+
+    async fn invalidate(&self, location: &Path) -> Result<()> {
+        // Remove the location from lookup table.
+        // This is cheaper (i.e., O(1)) instead of using O(n) to remove all entries from `self.cache`.
+        // The cache will be eventually cleared by the time-to-idle or LRU eviction.
+        let mut id_map = self.location_lookup.write().await;
+        id_map.remove(location);
         Ok(())
     }
 }
@@ -307,5 +364,38 @@ mod tests {
             }
             assert_eq!(data, buf);
         }
+    }
+
+    #[tokio::test]
+    async fn test_head() {
+        const PAGE_SIZE: usize = 512;
+        let cache = InMemoryCache::new(1024, PAGE_SIZE);
+        let local_fs = Arc::new(LocalFileSystem::new());
+
+        let tmp_dir = tempdir().unwrap();
+        let file_path = tmp_dir.path().join("test.bin");
+        let path = Path::from(file_path.as_path().to_str().unwrap());
+
+        let r = cache
+            .head(&path, {
+                let local_fs = local_fs.clone();
+                let path = path.clone();
+                async move { local_fs.head(&path).await }
+            })
+            .await;
+        assert!(matches!(r, Err(Error::NotFound { .. })));
+        cache.metadata_cache.run_pending_tasks().await;
+        assert_eq!(cache.metadata_cache.entry_count(), 0);
+
+        std::fs::write(&file_path, "test data").unwrap();
+        let meta = cache
+            .head(&path, {
+                let local_fs = local_fs.clone();
+                let path = path.clone();
+                async move { local_fs.head(&path).await }
+            })
+            .await
+            .unwrap();
+        assert_eq!(meta.size, 9);
     }
 }

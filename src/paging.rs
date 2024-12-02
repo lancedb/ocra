@@ -9,6 +9,7 @@ use std::ops::Range;
 use async_trait::async_trait;
 use bytes::Bytes;
 use object_store::path::Path;
+use object_store::ObjectMeta;
 
 use crate::Result;
 
@@ -16,7 +17,7 @@ use crate::Result;
 ///
 /// Caching fixed-size pages. Each page has a unique ID.
 #[async_trait]
-pub trait PageCache: Sync + Send + Debug {
+pub trait PageCache: Sync + Send + Debug + 'static {
     /// The size of each page.
     fn page_size(&self) -> usize;
 
@@ -43,6 +44,18 @@ pub trait PageCache: Sync + Send + Debug {
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes>;
 
+    /// Read cached page.
+    ///
+    /// # Parameters
+    /// - `location`: the path of the object.
+    /// - `page_id`: the ID of the page.
+    ///
+    /// # Returns
+    /// - `Ok(Some(Bytes))` if the page exists and the data was read successfully.
+    /// - `Ok(None)` if the cached page does not exist.
+    /// - `Err(Error)` if an error occurred.
+    async fn get(&self, location: &Path, page_id: u32) -> Result<Option<Bytes>>;
+
     /// Get range of data in the page.
     ///
     /// # Parameters
@@ -59,6 +72,22 @@ pub trait PageCache: Sync + Send + Debug {
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes>;
 
-    /// Remove a page from the cache.
-    async fn invalidate(&self, location: &Path, page_id: u32) -> Result<()>;
+    async fn get_range(
+        &self,
+        location: &Path,
+        page_id: u32,
+        range: Range<usize>,
+    ) -> Result<Option<Bytes>>;
+
+    /// Get metadata of the object.
+    async fn head(
+        &self,
+        location: &Path,
+        loader: impl Future<Output = Result<ObjectMeta>> + Send,
+    ) -> Result<ObjectMeta>;
+
+    /// Put data into the page.
+    async fn put(&self, location: &Path, page_id: u32, data: Bytes) -> Result<()>;
+    /// Remove all pages belong to the location.
+    async fn invalidate(&self, location: &Path) -> Result<()>;
 }
