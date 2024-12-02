@@ -9,6 +9,7 @@ use std::ops::Range;
 use async_trait::async_trait;
 use bytes::Bytes;
 use object_store::path::Path;
+use object_store::ObjectMeta;
 
 use crate::Result;
 
@@ -59,6 +60,13 @@ pub trait PageCache: Sync + Send + Debug {
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes>;
 
-    /// Remove a page from the cache.
-    async fn invalidate(&self, location: &Path, page_id: u32) -> Result<()>;
+    /// Get metadata of the object.
+    async fn head(
+        &self,
+        location: &Path,
+        loader: impl Future<Output = Result<ObjectMeta>> + Send,
+    ) -> Result<ObjectMeta>;
+
+    /// Remove all pages belong to the location.
+    async fn invalidate(&self, location: &Path) -> Result<()>;
 }

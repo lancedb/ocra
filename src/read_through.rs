@@ -31,48 +31,63 @@ impl<C: PageCache> ReadThroughCache<C> {
     pub fn new(inner: Arc<dyn ObjectStore>, cache: Arc<C>) -> Self {
         Self { inner, cache }
     }
+
+    async fn invalidate(&self, location: &Path) -> Result<()> {
+        self.cache.invalidate(location).await
+    }
 }
 
 #[async_trait]
 impl<C: PageCache + 'static> ObjectStore for ReadThroughCache<C> {
     async fn put_opts(
         &self,
-        _location: &Path,
-        _payload: PutPayload,
-        _options: PutOptions,
+        location: &Path,
+        payload: PutPayload,
+        options: PutOptions,
     ) -> Result<PutResult> {
-        todo!()
+        self.cache.invalidate(location).await?;
+
+        self.inner.put_opts(location, payload, options).await
     }
 
     async fn put_multipart_opts(
         &self,
-        _location: &Path,
+        location: &Path,
         _opts: PutMultipartOpts,
     ) -> Result<Box<dyn MultipartUpload>> {
-        todo!()
+        self.invalidate(location).await?;
+
+        self.inner.put_multipart_opts(location, _opts).await
     }
 
     async fn get_opts(&self, _location: &Path, _options: GetOptions) -> Result<GetResult> {
         todo!()
     }
 
-    async fn delete(&self, _location: &Path) -> object_store::Result<()> {
-        todo!()
+    async fn head(&self, location: &Path) -> Result<ObjectMeta> {
+        self.cache.head(location, self.inner.head(location)).await
     }
 
-    fn list(&'_ self, _prefix: Option<&Path>) -> BoxStream<'_, Result<ObjectMeta>> {
-        todo!()
+    async fn delete(&self, location: &Path) -> Result<()> {
+        self.invalidate(location).await?;
+        self.inner.delete(location).await
     }
 
-    async fn list_with_delimiter(&self, _prefix: Option<&Path>) -> Result<ListResult> {
-        todo!()
+    fn list(&'_ self, prefix: Option<&Path>) -> BoxStream<'_, Result<ObjectMeta>> {
+        self.inner.list(prefix)
+    }
+
+    async fn list_with_delimiter(&self, prefix: Option<&Path>) -> Result<ListResult> {
+        self.inner.list_with_delimiter(prefix).await
     }
 
     async fn copy(&self, from: &Path, to: &Path) -> Result<()> {
+        self.invalidate(to).await?;
         self.inner.copy(from, to).await
     }
 
     async fn copy_if_not_exists(&self, from: &Path, to: &Path) -> Result<()> {
+        self.invalidate(to).await?;
         self.inner.copy_if_not_exists(from, to).await
     }
 }
