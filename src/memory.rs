@@ -49,7 +49,7 @@ pub struct InMemoryCache {
     page_size: usize,
 
     /// In memory page cache: a mapping from `(path id, offset)` to data / bytes.
-    cache: Cache<(u64, u32), Bytes>,
+    pub cache: Cache<(u64, u32), Bytes>,
 
     /// Provide fast lookup of path id
     location_lookup: RwLock<HashMap<Path, u64>>,
@@ -147,6 +147,18 @@ impl PageCache for InMemoryCache {
     /// Cache capacity in bytes.
     fn capacity(&self) -> usize {
         self.capacity
+    }
+
+    fn size(&self) -> usize {
+        self.cache.weighted_size() as usize
+    }
+
+    async fn get(&self, location: &Path, page_id: u32) -> Result<Option<Bytes>> {
+        let location_id = self.location_id(location).await;
+        match self.cache.get(&(location_id, page_id)).await {
+            Some(bytes) => Ok(Some(bytes)),
+            None => Ok(None),
+        }
     }
 
     async fn get_with(

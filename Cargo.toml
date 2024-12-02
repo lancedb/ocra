@@ -23,6 +23,7 @@ tokio = { version = "1", features = ["sync"] }
 criterion = { version = "~0.5", features = ["async_tokio"] }
 tempfile = "~3.14"
 tokio = { version = "1", features = ["full"] }
+rand = "~0.8"
 
 [[bench]]
 name = "memory"
