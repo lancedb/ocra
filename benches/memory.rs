@@ -36,7 +36,6 @@ fn memory_cache_bench(c: &mut Criterion) {
         println!("Starting warm up cache with page size: {}", page_size);
         rt.block_on(async {
             let loc = location.clone();
-            store.get(&loc).await.unwrap();
             for i in 0..FILE_SIZE / page_size {
                 let data = cache
                     .get_with(&loc, i as u32, {
