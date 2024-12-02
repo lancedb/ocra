@@ -13,20 +13,24 @@
 //! let cache = InMemoryCache::builder(32 * 1024 * 1024 * 1024).build();
 //! ```
 
-use std::{future::Future, ops::Range, time::Duration};
+use std::{
+    collections::HashMap,
+    future::Future,
+    ops::Range,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 use bytes::Bytes;
 use moka::future::Cache;
 use object_store::path::Path;
 use sysinfo::{MemoryRefreshKind, RefreshKind};
+use tokio::sync::RwLock;
 
 mod builder;
 
 pub use self::builder::InMemoryCacheBuilder;
-use crate::{
-    paging::{to_page_key, PageCache, PageKey},
-    Error, Result,
-};
+use crate::{paging::PageCache, Error, Result};
 
 /// Default memory page size is 8 MB
 pub const DEFAULT_PAGE_SIZE: usize = 8 * 1024 * 1024;
@@ -45,7 +49,13 @@ pub struct InMemoryCache {
     page_size: usize,
 
     /// In memory page cache: a mapping from `(path id, offset)` to data / bytes.
-    cache: Cache<PageKey, Bytes>,
+    cache: Cache<(u64, u32), Bytes>,
+
+    /// Provide fast lookup of path id
+    location_lookup: RwLock<HashMap<Path, u64>>,
+
+    /// Next location id to be assigned
+    next_location_id: AtomicU64,
 }
 
 impl InMemoryCache {
@@ -104,7 +114,26 @@ impl InMemoryCache {
             capacity,
             page_size,
             cache,
+            location_lookup: RwLock::new(HashMap::new()),
+            next_location_id: AtomicU64::new(0),
         }
+    }
+
+    async fn location_id(&self, location: &Path) -> u64 {
+        if let Some(&key) = self.location_lookup.read().await.get(location) {
+            return key;
+        }
+
+        let mut id_map = self.location_lookup.write().await;
+        // on lock-escalation, check if someone else has added it
+        if let Some(&id) = id_map.get(location) {
+            return id;
+        }
+
+        let id = self.next_location_id.fetch_add(1, Ordering::SeqCst);
+        id_map.insert(location.clone(), id);
+
+        id
     }
 }
 
@@ -123,11 +152,15 @@ impl PageCache for InMemoryCache {
     async fn get_with(
         &self,
         location: &Path,
-        page_id: u64,
+        page_id: u32,
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes> {
-        let key = to_page_key(location, page_id);
-        match self.cache.try_get_with(key, loader).await {
+        let location_id = self.location_id(location).await;
+        match self
+            .cache
+            .try_get_with((location_id, page_id), loader)
+            .await
+        {
             Ok(bytes) => Ok(bytes),
             Err(e) => match e.as_ref() {
                 Error::NotFound { .. } => Err(Error::NotFound {
@@ -145,7 +178,7 @@ impl PageCache for InMemoryCache {
     async fn get_range_with(
         &self,
         location: &Path,
-        page_id: u64,
+        page_id: u32,
         range: Range<usize>,
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes> {
@@ -154,9 +187,9 @@ impl PageCache for InMemoryCache {
         Ok(bytes.slice(range))
     }
 
-    async fn invalidate(&self, location: &Path, page_id: u64) -> Result<()> {
-        let key = to_page_key(location, page_id);
-        self.cache.remove(&key).await;
+    async fn invalidate(&self, location: &Path, page_id: u32) -> Result<()> {
+        let location_id = self.location_id(location).await;
+        self.cache.remove(&(location_id, page_id)).await;
         Ok(())
     }
 }
@@ -265,8 +298,8 @@ mod tests {
             assert_eq!(cache.cache.entry_count(), *expected_size);
 
             let mut buf = BytesMut::with_capacity(PAGE_SIZE);
-            for i in page_id * PAGE_SIZE as u64 / 8..(page_id + 1) * PAGE_SIZE as u64 / 8 {
-                buf.put_u64(i);
+            for i in page_id * PAGE_SIZE as u32 / 8..(page_id + 1) * PAGE_SIZE as u32 / 8 {
+                buf.put_u64(i as u64);
             }
             assert_eq!(data, buf);
         }

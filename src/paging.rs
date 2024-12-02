@@ -9,19 +9,8 @@ use std::ops::Range;
 use async_trait::async_trait;
 use bytes::Bytes;
 use object_store::path::Path;
-use sha2::{Digest, Sha256};
 
 use crate::Result;
-
-pub(crate) type PageKey = [u8; 32];
-
-/// Convert a location and offset to a page key.
-pub(crate) fn to_page_key(location: &Path, offset: u64) -> PageKey {
-    let mut hasher = Sha256::new();
-    hasher.update(location.as_ref());
-    hasher.update(offset.to_be_bytes());
-    hasher.finalize().into()
-}
 
 /// [PageCache] trait.
 ///
@@ -47,7 +36,7 @@ pub trait PageCache: Sync + Send + Debug {
     async fn get_with(
         &self,
         location: &Path,
-        page_id: u64,
+        page_id: u32,
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes>;
 
@@ -62,11 +51,11 @@ pub trait PageCache: Sync + Send + Debug {
     async fn get_range_with(
         &self,
         location: &Path,
-        page_id: u64,
+        page_id: u32,
         range: Range<usize>,
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes>;
 
     /// Remove a page from the cache.
-    async fn invalidate(&self, location: &Path, page_id: u64) -> Result<()>;
+    async fn invalidate(&self, location: &Path, page_id: u32) -> Result<()>;
 }
