@@ -23,9 +23,9 @@ pub trait PageCache: Sync + Send + Debug {
     /// Cache capacity, in number of pages.
     fn capacity(&self) -> usize;
 
+    /// Total used cache size in bytes.
     fn size(&self) -> usize;
 
-    async fn get(&self, location: &Path, page_id: u32) -> Result<Option<Bytes>>;
     /// Read data of a page.
     ///
     /// # Parameters

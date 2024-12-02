@@ -51,8 +51,8 @@ fn memory_cache_bench(c: &mut Criterion) {
                     .unwrap();
                 assert!(!data.is_empty());
             }
-            cache.cache.run_pending_tasks().await;
         });
+        println!("Warm up cache done");
 
         c.bench_function(
             format!("memory_cache,warm,page_size={}", page_size).as_str(),
