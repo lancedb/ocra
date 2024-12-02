@@ -17,7 +17,7 @@ use crate::Result;
 ///
 /// Caching fixed-size pages. Each page has a unique ID.
 #[async_trait]
-pub trait PageCache: Sync + Send + Debug {
+pub trait PageCache: Sync + Send + Debug + 'static {
     /// The size of each page.
     fn page_size(&self) -> usize;
 
