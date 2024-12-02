@@ -60,7 +60,7 @@ async fn get_range<C: PageCache>(
     parallelism: usize,
 ) -> Result<Bytes> {
     let page_size = cache.page_size();
-    let start = (range.start / page_size as usize) * page_size;
+    let start = (range.start / page_size) * page_size;
     let meta = cache.head(location, store.head(location)).await?;
 
     let pages = stream::iter((start..range.end).step_by(page_size))
