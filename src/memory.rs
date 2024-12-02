@@ -32,9 +32,9 @@ mod builder;
 pub use self::builder::InMemoryCacheBuilder;
 use crate::{paging::PageCache, Error, Result};
 
-/// Default memory page size is 8 MB
-pub const DEFAULT_PAGE_SIZE: usize = 8 * 1024 * 1024;
-const DEFAULT_TIME_TO_LIVE: Duration = Duration::from_secs(60 * 30); // 30 minutes
+/// Default memory page size is 16 KB
+pub const DEFAULT_PAGE_SIZE: usize = 16 * 1024;
+const DEFAULT_TIME_TO_IDLE: Duration = Duration::from_secs(60 * 30); // 30 minutes
 
 /// In-memory [`PageCache`] implementation.
 ///
@@ -85,7 +85,7 @@ impl InMemoryCache {
     /// - `page_size`: The maximum size of each page.
     ///
     pub fn new(capacity_bytes: usize, page_size: usize) -> Self {
-        Self::with_params(capacity_bytes, page_size, DEFAULT_TIME_TO_LIVE)
+        Self::with_params(capacity_bytes, page_size, DEFAULT_TIME_TO_IDLE)
     }
 
     /// Create a new cache with a size that is a fraction of the system memory
