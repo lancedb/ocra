@@ -44,6 +44,18 @@ pub trait PageCache: Sync + Send + Debug + 'static {
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes>;
 
+    /// Read cached page.
+    ///
+    /// # Parameters
+    /// - `location`: the path of the object.
+    /// - `page_id`: the ID of the page.
+    ///
+    /// # Returns
+    /// - `Ok(Some(Bytes))` if the page exists and the data was read successfully.
+    /// - `Ok(None)` if the cached page does not exist.
+    /// - `Err(Error)` if an error occurred.
+    async fn get(&self, location: &Path, page_id: u32) -> Result<Option<Bytes>>;
+
     /// Get range of data in the page.
     ///
     /// # Parameters
@@ -60,6 +72,13 @@ pub trait PageCache: Sync + Send + Debug + 'static {
         loader: impl Future<Output = Result<Bytes>> + Send,
     ) -> Result<Bytes>;
 
+    async fn get_range(
+        &self,
+        location: &Path,
+        page_id: u32,
+        range: Range<usize>,
+    ) -> Result<Option<Bytes>>;
+
     /// Get metadata of the object.
     async fn head(
         &self,
@@ -67,6 +86,8 @@ pub trait PageCache: Sync + Send + Debug + 'static {
         loader: impl Future<Output = Result<ObjectMeta>> + Send,
     ) -> Result<ObjectMeta>;
 
+    /// Put data into the page.
+    async fn put(&self, location: &Path, page_id: u32, data: Bytes) -> Result<()>;
     /// Remove all pages belong to the location.
     async fn invalidate(&self, location: &Path) -> Result<()>;
 }

@@ -1,9 +1,10 @@
-use std::ops::Range;
 use std::sync::Arc;
+use std::{ops::Range, time::Duration};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use futures::{stream, stream::BoxStream, StreamExt, TryStreamExt};
+use moka::future::Cache;
 use object_store::{
     path::Path, Attributes, GetOptions, GetResult, GetResultPayload, ListResult, MultipartUpload,
     ObjectMeta, ObjectStore, PutMultipartOpts, PutOptions, PutPayload, PutResult,
@@ -17,6 +18,8 @@ use crate::{paging::PageCache, Error, Result};
 pub struct ReadThroughCache<C: PageCache> {
     inner: Arc<dyn ObjectStore>,
     cache: Arc<C>,
+
+    global_loader: Cache<(Path, usize), bool>,
 
     parallelism: usize,
 }
@@ -36,6 +39,10 @@ impl<C: PageCache> ReadThroughCache<C> {
         Self {
             inner,
             cache,
+            global_loader: Cache::builder()
+                .max_capacity(32)
+                .time_to_live(Duration::from_secs(60))
+                .build(),
             parallelism: num_cpus::get(),
         }
     }
@@ -56,41 +63,58 @@ async fn get_range<C: PageCache>(
     let start = (range.start / page_size as usize) * page_size;
     let meta = cache.head(location, store.head(location)).await?;
 
-    let bytes = stream::iter((start..range.end).step_by(page_size))
+    let pages = stream::iter((start..range.end).step_by(page_size))
         .map(|offset| {
             let page_cache = cache.clone();
-            let store = store.clone();
             let page_id = offset / page_size;
+            let page_end = std::cmp::min(offset + page_size, meta.size);
             async move {
                 // Actual range in the file.
                 let range_in_file = std::cmp::max(offset, range.start)
                     ..std::cmp::min(offset + page_size, range.end);
                 let range_in_page = range_in_file.start - offset..range_in_file.end - offset;
                 let page = page_cache
-                    .get_range_with(location, page_id as u32, range_in_page, async {
-                        store
-                            .get_range(
-                                location,
-                                offset..std::cmp::min(offset + page_size, meta.size),
-                            )
-                            .await
-                    })
+                    .get_range(location, page_id as u32, range_in_page)
                     .await?;
-                Ok::<_, Error>(page)
+                Ok::<_, Error>((page, offset..page_end))
             }
         })
         .buffered(parallelism)
         .try_collect::<Vec<_>>()
         .await?;
 
-    if bytes.len() == 1 {
-        return Ok(bytes.into_iter().next().unwrap());
+    let missed_pages = pages
+        .iter()
+        .filter(|(page, _)| page.is_none())
+        .map(|(_, range)| range.clone())
+        .collect::<Vec<_>>();
+
+    // TODO: handle parallel loading of missed ranges next.
+    let uncached_pages = store.get_ranges(location, &missed_pages).await?;
+
+    // stick all bytes together.
+    let mut buf = BytesMut::with_capacity(range.len());
+    let mut uncached_idx = 0;
+    for (bytes, page_range) in pages {
+        if let Some(bytes) = bytes {
+            buf.extend_from_slice(&bytes);
+        } else {
+            let page = &uncached_pages[uncached_idx];
+            let intersecion = std::cmp::max(page_range.start, range.start)
+                ..std::cmp::min(page_range.end, range.end);
+            let bytes =
+                &page[intersecion.start - page_range.start..intersecion.end - page_range.start];
+            buf.extend_from_slice(bytes);
+            uncached_idx += 1;
+        }
     }
 
-    let mut buf = BytesMut::with_capacity(range.len());
-    for b in bytes.iter() {
-        buf.extend_from_slice(&b);
+    // Put them back
+    for (bytes, range) in uncached_pages.into_iter().zip(missed_pages.iter()) {
+        let page_id = range.start / page_size;
+        cache.put(location, page_id as u32, bytes).await?;
     }
+
     Ok(buf.into())
 }
 
@@ -130,6 +154,7 @@ impl<C: PageCache> ObjectStore for ReadThroughCache<C> {
         let location = location.clone();
         let parallelism = self.parallelism;
 
+        // TODO: This might yield too many small reads.
         let s =
             stream::iter((0..file_size).step_by(page_size))
                 .map(move |offset| {
@@ -214,6 +239,7 @@ mod tests {
 
         let data = cache.get_range(&path, 10..meta.size).await.unwrap();
         assert_eq!(data.len(), 9);
+        println!("Data: {:?}", data);
         assert_eq!(data, "long text".as_bytes());
     }
 }

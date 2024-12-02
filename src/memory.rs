@@ -200,6 +200,29 @@ impl PageCache for InMemoryCache {
         Ok(bytes.slice(range))
     }
 
+    async fn get(&self, location: &Path, page_id: u32) -> Result<Option<Bytes>> {
+        let location_id = self.location_id(location).await;
+        Ok(self.cache.get(&(location_id, page_id)).await)
+    }
+
+    async fn get_range(
+        &self,
+        location: &Path,
+        page_id: u32,
+        range: Range<usize>,
+    ) -> Result<Option<Bytes>> {
+        Ok(self
+            .get(location, page_id)
+            .await?
+            .map(|bytes| bytes.slice(range)))
+    }
+
+    async fn put(&self, location: &Path, page_id: u32, data: Bytes) -> Result<()> {
+        let location_id = self.location_id(location).await;
+        self.cache.insert((location_id, page_id), data).await;
+        Ok(())
+    }
+
     async fn head(
         &self,
         location: &Path,
