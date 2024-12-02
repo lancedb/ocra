@@ -100,10 +100,10 @@ async fn get_range<C: PageCache>(
             buf.extend_from_slice(&bytes);
         } else {
             let page = &uncached_pages[uncached_idx];
-            let intersecion = std::cmp::max(page_range.start, range.start)
+            let intersection = std::cmp::max(page_range.start, range.start)
                 ..std::cmp::min(page_range.end, range.end);
             let bytes =
-                &page[intersecion.start - page_range.start..intersecion.end - page_range.start];
+                &page[intersection.start - page_range.start..intersection.end - page_range.start];
             buf.extend_from_slice(bytes);
             uncached_idx += 1;
         }
