@@ -14,6 +14,8 @@ use object_store::{
 
 use crate::{traits::CachedObjectStore, Result};
 
+/// Filtered by [object_store::path::Path]
+///
 pub trait PathFilter: Send + Sync + Debug {
     /// Returns true if the path should skip the cache and read the object store directly
     fn skip_cache(&self, path: &Path) -> bool;
