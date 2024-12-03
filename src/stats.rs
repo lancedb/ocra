@@ -56,6 +56,12 @@ impl AtomicIntCacheStats {
     }
 }
 
+impl Default for AtomicIntCacheStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CacheReadStats for AtomicIntCacheStats {
     fn total_misses(&self) -> u64 {
         self.total_misses.load(Ordering::Acquire)
