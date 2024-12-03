@@ -1,5 +1,5 @@
-use std::ops::Range;
 use std::sync::Arc;
+use std::{intrinsics::mir::Len, ops::Range};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
@@ -9,7 +9,7 @@ use object_store::{
     ObjectMeta, ObjectStore, PutMultipartOpts, PutOptions, PutPayload, PutResult,
 };
 
-use crate::{paging::PageCache, Result};
+use crate::{paging::PageCache, stats::CacheStats, Result};
 
 /// Read-through Page Cache.
 ///
@@ -19,6 +19,8 @@ pub struct ReadThroughCache<C: PageCache> {
     cache: Arc<C>,
 
     parallelism: usize,
+
+    stats: Arc<dyn CacheStats>,
 }
 
 impl<C: PageCache> std::fmt::Display for ReadThroughCache<C> {
@@ -37,6 +39,7 @@ impl<C: PageCache> ReadThroughCache<C> {
             inner,
             cache,
             parallelism: num_cpus::get(),
+            stats: Arc::new(crate::stats::AtomicIntCacheStats::new()),
         }
     }
 
@@ -48,6 +51,7 @@ impl<C: PageCache> ReadThroughCache<C> {
 async fn get_range<C: PageCache>(
     store: Arc<dyn ObjectStore>,
     cache: Arc<C>,
+    stats: Arc<dyn CacheStats>,
     location: &Path,
     range: Range<usize>,
     parallelism: usize,
@@ -65,21 +69,27 @@ async fn get_range<C: PageCache>(
             let range_in_page = intersection.start - offset..intersection.end - offset;
             let page_end = std::cmp::min(offset + page_size, meta.size);
             let store = store.clone();
+            let stats = stats.clone();
+
+            stats.inc_total_reads();
+
             async move {
                 // Actual range in the file.
                 page_cache
-                    .get_range_with(
-                        location,
-                        page_id as u32,
-                        range_in_page,
-                        store.get_range(location, offset..page_end),
-                    )
+                    .get_range_with(location, page_id as u32, range_in_page, async {
+                        stats.inc_total_misses();
+                        store.get_range(location, offset..page_end).await
+                    })
                     .await
             }
         })
         .buffered(parallelism)
         .try_collect::<Vec<_>>()
         .await?;
+
+    if pages.len() == 1 {
+        return Ok(pages.into_iter().next().unwrap());
+    }
 
     // stick all bytes together.
     let mut buf = BytesMut::with_capacity(range.len());
@@ -122,24 +132,33 @@ impl<C: PageCache> ObjectStore for ReadThroughCache<C> {
         let page_size = self.cache.page_size();
         let inner = self.inner.clone();
         let cache = self.cache.clone();
+        let stats = self.stats.clone();
         let location = location.clone();
         let parallelism = self.parallelism;
 
         // TODO: This might yield too many small reads.
-        let s =
-            stream::iter((0..file_size).step_by(page_size))
-                .map(move |offset| {
-                    let loc = location.clone();
-                    let store = inner.clone();
-                    let c = cache.clone();
-                    let page_size = cache.page_size();
+        let s = stream::iter((0..file_size).step_by(page_size))
+            .map(move |offset| {
+                let loc = location.clone();
+                let store = inner.clone();
+                let stats = stats.clone();
+                let c = cache.clone();
+                let page_size = cache.page_size();
 
-                    async move {
-                        get_range(store, c, &loc, offset..offset + page_size, parallelism).await
-                    }
-                })
-                .buffered(self.parallelism)
-                .boxed();
+                async move {
+                    get_range(
+                        store,
+                        c,
+                        stats,
+                        &loc,
+                        offset..offset + page_size,
+                        parallelism,
+                    )
+                    .await
+                }
+            })
+            .buffered(self.parallelism)
+            .boxed();
 
         let payload = GetResultPayload::Stream(s);
         Ok(GetResult {
@@ -154,6 +173,7 @@ impl<C: PageCache> ObjectStore for ReadThroughCache<C> {
         get_range(
             self.inner.clone(),
             self.cache.clone(),
+            self.stats.clone(),
             location,
             range,
             self.parallelism,
