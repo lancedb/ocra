@@ -35,11 +35,23 @@ impl<C: PageCache> std::fmt::Display for ReadThroughCache<C> {
 
 impl<C: PageCache> ReadThroughCache<C> {
     pub fn new(inner: Arc<dyn ObjectStore>, cache: Arc<C>) -> Self {
+        Self::new_with_stats(
+            inner,
+            cache,
+            Arc::new(crate::stats::AtomicIntCacheStats::new()),
+        )
+    }
+
+    pub fn new_with_stats(
+        inner: Arc<dyn ObjectStore>,
+        cache: Arc<C>,
+        stats: Arc<dyn CacheStats>,
+    ) -> Self {
         Self {
             inner,
             cache,
             parallelism: num_cpus::get(),
-            stats: Arc::new(crate::stats::AtomicIntCacheStats::new()),
+            stats,
         }
     }
 
