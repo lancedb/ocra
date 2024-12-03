@@ -32,6 +32,7 @@
 pub mod memory;
 pub mod paging;
 mod read_through;
+pub mod stats;
 
 // We reuse `object_store` Error and Result to make this crate work well
 // with the rest of object_store implementations.
