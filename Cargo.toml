@@ -2,6 +2,7 @@
 name = "ocra"
 version = "0.1.0"
 authors = ["dev@lancedb.com"]
+repository = "https://github.com/lancedb/ocra"
 description = "OCRA: A Rust implementation of Cache in arrow-rs' ObjectStore interface"
 edition = "2021"
 license-file = "LICENSE"
@@ -28,3 +29,10 @@ rand = "~0.8"
 [[bench]]
 name = "memory"
 harness = false
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+multiple-crate-versions = "allow"
