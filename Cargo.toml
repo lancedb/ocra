@@ -5,7 +5,7 @@ authors = ["dev@lancedb.com"]
 repository = "https://github.com/lancedb/ocra"
 description = "OCRA: A Rust implementation of Cache in arrow-rs' ObjectStore interface"
 edition = "2021"
-license-file = "LICENSE"
+license = "AGPL-3.0-or-later"
 keywords = ["cache", "object-store", "arrow"]
 categories = ["caching"]
 
