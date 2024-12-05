@@ -9,13 +9,16 @@ use object_store::{
     ObjectMeta, ObjectStore, PutMultipartOpts, PutOptions, PutPayload, PutResult,
 };
 
-use crate::{paging::PageCache, stats::CacheStats, Result};
+use crate::{paging::PageCache, stats::CacheStats, CachedObjectStore, Result};
 
 /// Read-through Page Cache.
 ///
 #[derive(Debug, Clone)]
 pub struct ReadThroughCache<C: PageCache> {
+    /// Underneath [ObjectStore] to read the real data when cache misses.
     inner: Arc<dyn ObjectStore>,
+
+    /// A cache.
     cache: Arc<C>,
 
     parallelism: usize,
@@ -109,6 +112,16 @@ async fn get_range<C: PageCache>(
         buf.extend_from_slice(&page);
     }
     Ok(buf.into())
+}
+
+impl<C: PageCache> CachedObjectStore for ReadThroughCache<C> {
+    fn inner(&self) -> &Arc<dyn ObjectStore> {
+        &self.inner
+    }
+
+    fn stats(&self) -> &Arc<dyn CacheStats> {
+        &self.stats
+    }
 }
 
 #[async_trait]

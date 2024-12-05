@@ -28,6 +28,10 @@
 //! # })
 //! ```
 
+use std::sync::Arc;
+
+use object_store::ObjectStore;
+
 // pub mod error;
 pub mod memory;
 pub mod paging;
@@ -38,4 +42,16 @@ pub mod stats;
 // with the rest of object_store implementations.
 pub use object_store::{Error, Result};
 
-pub use read_through::ReadThroughCache;
+pub use crate::read_through::ReadThroughCache;
+use crate::stats::CacheStats;
+
+/// CacheObject
+pub trait CachedObjectStore: ObjectStore {
+    /// The underneath [ObjectStore].
+    ///
+    /// If cache misses, read from it for actual data.
+    fn inner(&self) -> &Arc<dyn ObjectStore>;
+
+    /// Get the stats of the cache.
+    fn stats(&self) -> &Arc<dyn CacheStats>;
+}
