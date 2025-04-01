@@ -11,7 +11,7 @@ categories = ["caching"]
 
 [dependencies]
 async-trait = "~0.1"
-bytes = "~1.9"
+bytes = "~1.10"
 futures = "~0.3"
 log = "~0.4"
 moka = { version = "~0.12", features = ["future"] }
