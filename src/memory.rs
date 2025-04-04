@@ -100,7 +100,7 @@ impl InMemoryCache {
     /// 2. you are okay with the performance of swapping to disk
     pub fn with_sys_memory(fraction: f32) -> InMemoryCacheBuilder {
         let sys = sysinfo::System::new_with_specifics(
-            RefreshKind::new().with_memory(MemoryRefreshKind::everything()),
+            RefreshKind::nothing().with_memory(MemoryRefreshKind::everything()),
         );
         let capacity = (sys.total_memory() as f32 * fraction) as usize;
         Self::builder(capacity)
