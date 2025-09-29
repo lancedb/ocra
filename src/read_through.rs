@@ -82,7 +82,6 @@ async fn get_range<C: PageCache>(
             let store = store.clone();
             let stats = stats.clone();
             let loc = location.clone();
-            let meta_size = meta_size;
 
             async move {
                 stats.inc_total_reads();
