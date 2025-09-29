@@ -41,10 +41,13 @@ fn memory_cache_bench(c: &mut Criterion) {
                     .get_with(&loc, i as u32, {
                         let store = store.clone();
                         let location = loc.clone();
+                        let page_size = *page_size;
                         async move {
-                            store
-                                .get_range(&location, i * page_size..(i + 1) * page_size)
-                                .await
+                            let page_size_u64 = u64::try_from(page_size).unwrap();
+                            let i_u64 = u64::try_from(i).unwrap();
+                            let start = i_u64 * page_size_u64;
+                            let end = (i_u64 + 1) * page_size_u64;
+                            store.get_range(&location, start..end).await
                         }
                     })
                     .await

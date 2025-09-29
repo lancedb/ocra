@@ -342,12 +342,9 @@ mod tests {
                     let location = location.clone();
                     async move {
                         miss.fetch_add(1, Ordering::SeqCst);
-                        local_fs
-                            .get_range(
-                                &location,
-                                PAGE_SIZE * (*page_id as usize)..PAGE_SIZE * (page_id + 1) as usize,
-                            )
-                            .await
+                        let start = (PAGE_SIZE as u64) * (*page_id as u64);
+                        let end = (PAGE_SIZE as u64) * ((*page_id as u64) + 1);
+                        local_fs.get_range(&location, start..end).await
                     }
                 })
                 .await

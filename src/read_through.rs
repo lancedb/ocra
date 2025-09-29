@@ -6,10 +6,10 @@ use bytes::{Bytes, BytesMut};
 use futures::{stream, stream::BoxStream, StreamExt, TryStreamExt};
 use object_store::{
     path::Path, Attributes, GetOptions, GetResult, GetResultPayload, ListResult, MultipartUpload,
-    ObjectMeta, ObjectStore, PutMultipartOpts, PutOptions, PutPayload, PutResult,
+    ObjectMeta, ObjectStore, PutMultipartOptions, PutOptions, PutPayload, PutResult,
 };
 
-use crate::{paging::PageCache, stats::CacheStats, Result};
+use crate::{paging::PageCache, stats::CacheStats, Error, Result};
 
 /// Read-through Page Cache.
 ///
@@ -65,32 +65,60 @@ async fn get_range<C: PageCache>(
     cache: Arc<C>,
     stats: Arc<dyn CacheStats>,
     location: &Path,
-    range: Range<usize>,
+    range: Range<u64>,
     parallelism: usize,
 ) -> Result<Bytes> {
     let page_size = cache.page_size();
-    let start = (range.start / page_size) * page_size;
+    let page_size_u64 = page_size as u64;
+    let range_start = range.start;
+    let range_end = range.end;
+    let start = (range_start / page_size_u64) * page_size_u64;
     let meta = cache.head(location, store.head(location)).await?;
+    let meta_size = meta.size;
 
-    let pages = stream::iter((start..range.end).step_by(page_size))
+    let pages = stream::iter((start..range_end).step_by(page_size))
         .map(|offset| {
             let page_cache = cache.clone();
-            let page_id = offset / page_size;
-            let intersection =
-                std::cmp::max(offset, range.start)..std::cmp::min(offset + page_size, range.end);
-            let range_in_page = intersection.start - offset..intersection.end - offset;
-            let page_end = std::cmp::min(offset + page_size, meta.size);
             let store = store.clone();
             let stats = stats.clone();
-
-            stats.inc_total_reads();
+            let loc = location.clone();
+            let meta_size = meta_size;
 
             async move {
-                // Actual range in the file.
+                stats.inc_total_reads();
+
+                let page_id =
+                    u32::try_from(offset / page_size_u64).map_err(|e| Error::Generic {
+                        store: "ReadThroughCache",
+                        source: Box::new(e),
+                    })?;
+
+                let page_end = std::cmp::min(offset + page_size_u64, meta_size);
+                let intersection_start = std::cmp::max(offset, range_start);
+                let intersection_end = std::cmp::min(page_end, range_end);
+
+                let start_in_page =
+                    usize::try_from(intersection_start - offset).map_err(|e| Error::Generic {
+                        store: "ReadThroughCache",
+                        source: Box::new(e),
+                    })?;
+                let end_in_page =
+                    usize::try_from(intersection_end - offset).map_err(|e| Error::Generic {
+                        store: "ReadThroughCache",
+                        source: Box::new(e),
+                    })?;
+
+                let range_in_page = start_in_page..end_in_page;
+                let stats_for_miss = stats.clone();
+                let store_for_loader = store.clone();
+                let loc_for_loader = loc.clone();
+
                 page_cache
-                    .get_range_with(location, page_id as u32, range_in_page, async {
-                        stats.inc_total_misses();
-                        store.get_range(location, offset..page_end).await
+                    .get_range_with(&loc, page_id, range_in_page, async move {
+                        stats_for_miss.inc_total_misses();
+                        store_for_loader
+                            .get_range(&loc_for_loader, offset..page_end)
+                            .await
                     })
                     .await
             }
@@ -103,8 +131,13 @@ async fn get_range<C: PageCache>(
         return Ok(pages.into_iter().next().unwrap());
     }
 
+    let range_len = usize::try_from(range_end - range_start).map_err(|e| Error::Generic {
+        store: "ReadThroughCache",
+        source: Box::new(e),
+    })?;
+
     // stick all bytes together.
-    let mut buf = BytesMut::with_capacity(range.len());
+    let mut buf = BytesMut::with_capacity(range_len);
     for page in pages {
         buf.extend_from_slice(&page);
     }
@@ -127,11 +160,11 @@ impl<C: PageCache> ObjectStore for ReadThroughCache<C> {
     async fn put_multipart_opts(
         &self,
         location: &Path,
-        _opts: PutMultipartOpts,
+        options: PutMultipartOptions,
     ) -> Result<Box<dyn MultipartUpload>> {
         self.invalidate(location).await?;
 
-        self.inner.put_multipart_opts(location, _opts).await
+        self.inner.put_multipart_opts(location, options).await
     }
 
     async fn get_opts(&self, _location: &Path, _options: GetOptions) -> Result<GetResult> {
@@ -155,7 +188,7 @@ impl<C: PageCache> ObjectStore for ReadThroughCache<C> {
                 let store = inner.clone();
                 let stats = stats.clone();
                 let c = cache.clone();
-                let page_size = cache.page_size();
+                let page_size = cache.page_size() as u64;
 
                 async move {
                     get_range(
@@ -181,7 +214,7 @@ impl<C: PageCache> ObjectStore for ReadThroughCache<C> {
         })
     }
 
-    async fn get_range(&self, location: &Path, range: Range<usize>) -> Result<Bytes> {
+    async fn get_range(&self, location: &Path, range: Range<u64>) -> Result<Bytes> {
         get_range(
             self.inner.clone(),
             self.cache.clone(),
@@ -202,7 +235,7 @@ impl<C: PageCache> ObjectStore for ReadThroughCache<C> {
         self.inner.delete(location).await
     }
 
-    fn list(&'_ self, prefix: Option<&Path>) -> BoxStream<'_, Result<ObjectMeta>> {
+    fn list(&self, prefix: Option<&Path>) -> BoxStream<'static, Result<ObjectMeta>> {
         self.inner.list(prefix)
     }
 
